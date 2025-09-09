@@ -28,7 +28,6 @@ import {
    DialogTitle,
 } from "@/components/ui/dialog";
 import ScanDetails from "@/components/scan_details";
-import { mockScanData } from "@/data/staic_data";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Port {
@@ -81,6 +80,7 @@ export default function NetworkScannerPage() {
    const [isScanning, setIsScanning] = useState(false);
    const [openDialog, setOpenDialog] = useState(false);
    const [selectedPort, setSelectedPort] = useState<Port | null>(null);
+   const [scanError, setScanError] = useState<string | null>(null);
 
    const [scans, setScans] = useState<SavedScan[]>([]);
    const [previewOpen, setPreviewOpen] = useState(false);
@@ -94,7 +94,7 @@ export default function NetworkScannerPage() {
    const getOpenPortsCount = (data: NetworkScanData) =>
       data.ports.filter((p) => p.state.toLowerCase() === "open").length;
 
-   // Fetch scans from database on component mount
+   
    useEffect(() => {
       fetchScans();
    }, []);
@@ -106,7 +106,7 @@ export default function NetworkScannerPage() {
          if (response.ok) {
             const dbScans: DatabaseScan[] = await response.json();
 
-            // Convert database scans to the expected format
+            
             const convertedScans: SavedScan[] = dbScans.map((dbScan) => ({
                id: dbScan.id.toString(),
                target: dbScan.hostname || dbScan.ip,
@@ -136,26 +136,31 @@ export default function NetworkScannerPage() {
       }
    };
 
-   const saveScanToDatabase = async (scanData: NetworkScanData) => {
+   const performNmapScan = async (
+      target: string
+   ): Promise<NetworkScanData | null> => {
       try {
          const response = await fetch("/api/scans", {
             method: "POST",
             headers: {
                "Content-Type": "application/json",
             },
-            body: JSON.stringify(scanData),
+            body: JSON.stringify({ target }),
          });
 
          if (response.ok) {
-            console.log("Scan saved to database successfully");
-            return true;
+            const result = await response.json();
+            console.log("Nmap scan completed successfully");
+            return result.scanData;
          } else {
-            console.error("Failed to save scan to database");
-            return false;
+            const errorData = await response.json();
+            throw new Error(
+               errorData.details || errorData.error || "Scan failed"
+            );
          }
-      } catch (error) {
-         console.error("Error saving scan to database:", error);
-         return false;
+      } catch (error: any) {
+         console.error("Error performing nmap scan:", error);
+         throw error;
       }
    };
 
@@ -163,40 +168,23 @@ export default function NetworkScannerPage() {
       if (!targetInput.trim()) return;
 
       setIsScanning(true);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      setScanError(null);
+      const target = targetInput.trim();
 
-      const clone: NetworkScanData = {
-         ...mockScanData,
-         scan_date: new Date().toISOString(),
-         host: { ...mockScanData.host },
-         ports: mockScanData.ports.map((p) => ({ ...p })),
-         service_info: { ...mockScanData.service_info },
-      };
+      try {
+         
+         const scanResult = await performNmapScan(target);
 
-      const input = targetInput.trim();
-      const looksLikeIp = /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(input);
-      if (looksLikeIp) {
-         clone.host.ip = input;
-      } else {
-         clone.host.hostname = input;
+         if (scanResult) {
+            setScanData(scanResult);
+            await fetchScans();
+         }
+      } catch (error: any) {
+         console.error("Error during scan:", error);
+         setScanError(error.message || "An error occurred during the scan");
+      } finally {
+         setIsScanning(false);
       }
-
-      setScanData(clone);
-
-      // Save to database
-      const saved = await saveScanToDatabase(clone);
-      if (saved) {
-         // Refresh the scans list from database
-         await fetchScans();
-      } else {
-         // Fallback to local state if database save fails
-         setScans((prev) => [
-            { id: genId(), target: input, data: clone },
-            ...prev,
-         ]);
-      }
-
-      setIsScanning(false);
    };
 
    const getStateColor = (state: string) => {
@@ -254,20 +242,39 @@ export default function NetworkScannerPage() {
                   </CardDescription>
                </CardHeader>
                <CardContent>
-                  <div className="flex gap-2">
-                     <Input
-                        placeholder="192.168.1.1 or example.com"
-                        value={targetInput}
-                        onChange={(e) => setTargetInput(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleScan()}
-                        className="flex-1"
-                     />
-                     <Button
-                        onClick={handleScan}
-                        disabled={isScanning || !targetInput.trim()}
-                        className="min-w-24">
-                        {isScanning ? "Scanning..." : "Scan"}
-                     </Button>
+                  <div className="space-y-4">
+                     <div className="flex gap-2">
+                        <Input
+                           placeholder="192.168.1.1 or example.com"
+                           value={targetInput}
+                           onChange={(e) => setTargetInput(e.target.value)}
+                           onKeyDown={(e) => e.key === "Enter" && handleScan()}
+                           className="flex-1"
+                        />
+                        <Button
+                           onClick={handleScan}
+                           disabled={isScanning || !targetInput.trim()}
+                           className="min-w-24">
+                           {isScanning ? "Scanning..." : "Scan"}
+                        </Button>
+                     </div>
+
+                     {scanError && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                           <p className="text-sm text-red-700">
+                              <strong>Scan Error:</strong> {scanError}
+                           </p>
+                        </div>
+                     )}
+
+                     {isScanning && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                           <p className="text-sm text-blue-700">
+                              Running nmap scan on {targetInput}... This may
+                              take a few minutes.
+                           </p>
+                        </div>
+                     )}
                   </div>
                </CardContent>
             </Card>
@@ -357,7 +364,9 @@ export default function NetworkScannerPage() {
                </CardContent>
             </Card>
 
-            {/* {scanData && <ScanDetails data={scanData} getStateColor={getStateColor} />} */}
+            {/* {scanData && (
+               <ScanDetails data={scanData} getStateColor={getStateColor} />
+            )} */}
          </div>
 
          <ScrollArea>

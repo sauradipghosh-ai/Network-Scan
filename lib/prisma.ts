@@ -6,7 +6,7 @@ declare global {
 }
 
 export const prisma = global.prisma || new PrismaClient({
-  log: ['query'], // Optional, logs SQL queries
+  log: ['query'], // to check the query spped after indexing
 });
 
 if (process.env.NODE_ENV !== 'production') global.prisma = prisma;

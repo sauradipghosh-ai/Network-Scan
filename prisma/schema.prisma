@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../lib/generated/prisma"
@@ -14,25 +8,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Scan{
-  id Int @id @default(autoincrement())
-  ip String
-  hostname String?
-  status String
-  scanDate DateTime
-  ports Port[]
+model Scan {
+  id        Int  @id @default(autoincrement())
+  ip        String
+  hostname  String?
+  status    String
+  scanDate  DateTime
+  ports     Port[]
+
+  @@index([ip])
+  @@index([scanDate])
+  @@index([ip, scanDate])
 
   @@map("scans")
-  
 }
 
-model Port{
-  id Int @id @default(autoincrement())
-  port Int
+model Port {
+  id       Int  @id @default(autoincrement())
+  port     Int
   protocol String
-  state String
-  service String
-  version String?
-  scanId Int
-  scan Scan @relation(fields: [scanId],references: [id])
+  state    String
+  service  String
+  version  String?
+  scanId   Int
+  scan     Scan @relation(fields: [scanId], references: [id])
+
+  @@index([port])
+  @@index([protocol])
+  @@index([scanId])
+  @@index([port, protocol])
+
+  @@index([port, scanId])
 }

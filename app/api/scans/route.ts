@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { exec } from "child_process";
 import { promisify } from "util";
 
-
 import {NmapPort, NmapResult} from "@/app/api/scans/nmap_type";
 
 const execAsync = promisify(exec);
@@ -15,58 +14,92 @@ function covertText(text: string): NmapResult {
   
   let nmap_version = "";
   let scan_date = "";
-  const host: any = { hostname: "", ip: "", status: "", latency: "" };
+
+  const host: any = { 
+
+    hostname: "", 
+    ip: "", 
+    status: "",
+    latency: "" 
+  };
+
   const ports: NmapPort[] = [];
+
   let service_info = { os: "", cpe: "" };
 
-  for (const line of lines) {
-    if (line.startsWith("Starting Nmap")) {
-      const match = line.match(/^Starting Nmap\s+([\d.]+)/);
-      if (match) nmap_version = match[1];
-      const datePart = line.split("at")[1]?.trim();
-      if (datePart) scan_date = datePart;
+  for (const l of lines) {
+
+    if (l.startsWith("Starting Nmap")) {
+
+      const match = l.match(/^Starting Nmap\s+([\d.]+)/); // i got the nmap version no
+
+      if (match){
+        nmap_version = match[1];
+      } 
+
+      const datePart = l.split("at")[1]?.trim();
+
+      if (datePart){
+        scan_date = datePart;
+      } 
+
     }
 
-    if (line.startsWith("Nmap scan report for")) {
-      const parts = line.replace("Nmap scan report for", "").trim().split(" ");
+    if (l.startsWith("Nmap scan report for")) {
+
+      const parts = l.replace("Nmap scan report for", "").trim().split(" ");
+
       if (parts.length === 1) {
+
         host.ip = parts[0];
+
       } else {
+
         host.hostname = parts[0];
         host.ip = parts[1].replace(/[()]/g, "");
+
       }
     }
 
-    if (line.startsWith("Host is up")) {
+    if (l.startsWith("Host is up")) {
+
       host.status = "up";
-      const match = line.match(/\((.*?) latency\)/);
-      if (match) host.latency = match[1];
+      
     }
 
-    const portMatch = line.match(/^(\d+)\/(\w+)\s+(\w+)\s+(\S+)(.*)$/);
+    const portMatch = l.match(/^(\d+)\/(\w+)\s+(\w+)\s+(\S+)(.*)$/);
     if (portMatch) {
-      const [, port, protocol, state, service, version] = portMatch;
-      ports.push({
-        port: parseInt(port),
-        protocol,
-        state,
-        service,
-        version: version.trim() || null,
-      });
+
+      const [,port, protocol, state, service, version] = portMatch;
+
+      ports.push(
+        {
+          port: parseInt(port),
+          protocol,
+          state,
+          service,
+          version: version.trim() || null,
+        }
+      );
+
     }
   }
 
   return {
+
     nmap_version,
     scan_date,
     host,
     ports,
     service_info,
+    
   };
 }
 
 async function runNmapScan(target: string): Promise<NmapResult> {
+
   const nmapPath = '"C:\\Program Files (x86)\\Nmap\\nmap.exe"';
+
   const command = `${nmapPath} -sV -O ${target}`;
 
   try {
@@ -79,15 +112,18 @@ async function runNmapScan(target: string): Promise<NmapResult> {
     }
 
     console.log("scan Data :", stdout);
+
     return covertText(stdout);
 
   } catch (error: any) {
+
     console.log("execute Error:", error);
     throw new Error(`Error scan failed: ${error.message}`);
   }
 }
 
 export async function POST(req: Request) {
+
   try {
   
     const { target } = await req.json();
@@ -139,6 +175,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+
   const scans = await prisma.scan.findMany({
     include: { ports: true },
     orderBy: { scanDate: "desc" },
